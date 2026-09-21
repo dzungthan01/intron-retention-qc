@@ -20,13 +20,20 @@ Two libraries per sample:
 For each pair of consecutive introns (A = more 3', B = the next intron 5' of A) on the same
 transcript:
 
-1. **Low polyA signal at A.** Near-zero average coverage for A in the polyA library.
-2. **Higher polyA signal at B than at A** (by at least `ratio_threshold`, default 0.3 — i.e., B's
-   coverage exceeds A's coverage by that fraction). This is the bias-control step: if A's low
-   signal were pure 3' bias, B (further from the 3' end) should be *lower* still, not higher.
-   Seeing B higher than A rules that out.
-3. **Non-low signal at A in the no-select library.** A is actively transcribed/present in the
-   no-select data — the low polyA signal at A isn't simply "nothing is there."
+1. **Low polyA signal at A.** Near-zero average coverage for A in the polyA library
+   (`--low-polyA-threshold`, default 0.0).
+2. **Real signal at B, higher than at A.** Two parts, both required. B's coverage must clear
+   `--min-polyA-at-b` (default 0.1), and must exceed A's by at least `ratio_threshold`
+   (default 0.3 — i.e. B exceeds A by that fraction of A). This is the bias-control step: if
+   A's low signal were pure 3' bias, B (further from the 3' end) should be *lower* still, not
+   higher. The floor on B is what carries the criterion when A is zero — a ratio against zero
+   passes on any positive value, however negligible, so the ratio alone does no work in
+   exactly the regime criterion 1 selects for.
+3. **Non-low signal at A in the no-select library, above B.** A must clear
+   `--nonlow-noselect-threshold` (default 0.1) and exceed B. The report's Methods states this
+   relationally — "in the noSelect assay, the first intron's signal should surpass that of the
+   second" — so a threshold on A alone is not sufficient: A being present says the low polyA
+   signal isn't simply "nothing is there," while A exceeding B is what distinguishes the pair.
 
 An intron pair passing all three is a **candidate** free-floating-intron locus: signal that
 exists in the no-select assay but can't be explained by retained pre-mRNA (which would show up in

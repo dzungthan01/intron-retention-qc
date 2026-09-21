@@ -5,16 +5,17 @@ For each pair of consecutive introns on a transcript (A = closer to the 3' end,
 B = the next intron toward the 5' end), flag the pair as a candidate if all three
 hold:
   1. Low polyA-library coverage at A (near zero)
-  2. polyA coverage at B exceeds polyA coverage at A by at least --ratio-threshold
-     (this is what rules out plain 3' bias -- see references/methodology.md)
-  3. Non-low no-select-library coverage at A (A is present, just not polyadenylated)
+  2. Real signal at B in polyA, exceeding A by at least --ratio-threshold. The
+     floor on B is what carries this criterion when A is zero -- a bare ratio
+     against zero passes on any speck of signal, which is not evidence of
+     anything (see references/methodology.md)
+  3. Non-low no-select coverage at A, and higher at A than at B
 
 v1 draft, implementing the criteria described in the source report's "Identifying
 free-floating introns" methodology section (no runnable code for this exact
 comparison step was included in that report's appendix; the coverage/crossing
 inputs it consumes come from the two scripts that were, adapted upstream in this
-package). Needs review of the "near zero" / "low" thresholds below against a real
-negative-control distribution before trusting output.
+package).
 
 Usage:
     python classify_free_floating_introns.py \
@@ -26,11 +27,17 @@ import argparse
 import csv
 from collections import defaultdict
 
-# "Near zero" / "non-low" are necessarily dataset-dependent; these are starting
-# points based on the source study and should be re-derived from your own data
-# (e.g. the Nth percentile of coverage at introns with no crossing-read support).
-DEFAULT_LOW_POLYA_THRESHOLD = 1.0
-DEFAULT_NONLOW_NOSELECT_THRESHOLD = 1.0
+# Derived from the liver no-select coverage distribution: 48.3% of introns sit at
+# exactly zero, and the non-zero band under 0.1 is a read or two smeared across a
+# long intron. Re-derive against your own polyA library before trusting these.
+DEFAULT_LOW_POLYA_THRESHOLD = 0.0
+DEFAULT_NONLOW_NOSELECT_THRESHOLD = 0.1
+DEFAULT_MIN_POLYA_AT_B = 0.1
+DEFAULT_RATIO_THRESHOLD = 0.3
+
+# Keeps the ratio defined when A is exactly zero. Criterion 2's floor on B has
+# already ruled out noise by the time this is reached.
+RATIO_DENOMINATOR_FLOOR = 1e-9
 
 
 def load_transcript_structure(introns_path):
@@ -64,8 +71,9 @@ def main():
     ap.add_argument("--introns", required=True)
     ap.add_argument("--polyA-cov", required=True)
     ap.add_argument("--noselect-cov", required=True)
-    ap.add_argument("--ratio-threshold", type=float, default=0.3)
+    ap.add_argument("--ratio-threshold", type=float, default=DEFAULT_RATIO_THRESHOLD)
     ap.add_argument("--low-polyA-threshold", type=float, default=DEFAULT_LOW_POLYA_THRESHOLD)
+    ap.add_argument("--min-polyA-at-b", type=float, default=DEFAULT_MIN_POLYA_AT_B)
     ap.add_argument(
         "--nonlow-noselect-threshold", type=float, default=DEFAULT_NONLOW_NOSELECT_THRESHOLD
     )
@@ -83,18 +91,28 @@ def main():
         for idx in range(len(ordered_introns) - 1):
             _, intron_a = ordered_introns[idx]
             _, intron_b = ordered_introns[idx + 1]
-            if intron_a not in polyA or intron_b not in polyA or intron_a not in noselect:
+            if intron_a not in polyA or intron_b not in polyA:
+                continue
+            if intron_a not in noselect or intron_b not in noselect:
                 continue
 
             polyA_a, polyA_b = polyA[intron_a], polyA[intron_b]
-            noselect_a = noselect[intron_a]
+            noselect_a, noselect_b = noselect[intron_a], noselect[intron_b]
 
-            criterion_1_low_polyA_at_a = polyA_a <= args.low_polyA_threshold
-            denom = polyA_a if polyA_a > 0 else 1e-9
-            criterion_2_b_exceeds_a = (polyA_b - polyA_a) / denom >= args.ratio_threshold
-            criterion_3_nonlow_noselect_at_a = noselect_a >= args.nonlow_noselect_threshold
+            low_polyA_at_a = polyA_a <= args.low_polyA_threshold
+            signal_at_b = polyA_b >= args.min_polyA_at_b
+            rises_toward_b = (
+                (polyA_b - polyA_a) / max(polyA_a, RATIO_DENOMINATOR_FLOOR)
+                >= args.ratio_threshold
+            )
+            nonlow_noselect_at_a = noselect_a >= args.nonlow_noselect_threshold
+            noselect_falls_toward_b = noselect_a > noselect_b
 
-            if criterion_1_low_polyA_at_a and criterion_2_b_exceeds_a and criterion_3_nonlow_noselect_at_a:
+            criterion_1 = low_polyA_at_a
+            criterion_2 = signal_at_b and rises_toward_b
+            criterion_3 = nonlow_noselect_at_a and noselect_falls_toward_b
+
+            if criterion_1 and criterion_2 and criterion_3:
                 candidates.append(
                     {
                         "transcript_id": transcript_id,
@@ -103,17 +121,24 @@ def main():
                         "polyA_a": polyA_a,
                         "polyA_b": polyA_b,
                         "noselect_a": noselect_a,
+                        "noselect_b": noselect_b,
                     }
                 )
 
     with open(args.out, "w", newline="") as f:
         w = csv.writer(f, delimiter="\t")
         w.writerow(
-            ["transcript_id", "intron_a_3prime", "intron_b_5prime", "polyA_a", "polyA_b", "noselect_a"]
+            [
+                "transcript_id", "intron_a_3prime", "intron_b_5prime",
+                "polyA_a", "polyA_b", "noselect_a", "noselect_b",
+            ]
         )
         for c in candidates:
             w.writerow(
-                [c["transcript_id"], c["intron_a"], c["intron_b"], c["polyA_a"], c["polyA_b"], c["noselect_a"]]
+                [
+                    c["transcript_id"], c["intron_a"], c["intron_b"],
+                    c["polyA_a"], c["polyA_b"], c["noselect_a"], c["noselect_b"],
+                ]
             )
 
     print(f"{len(candidates)} candidate intron pairs written to {args.out}")
