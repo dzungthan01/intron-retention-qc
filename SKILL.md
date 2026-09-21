@@ -72,19 +72,23 @@ intron in isolation, specifically to cancel this bias out. Don't skip straight t
 4. **Classify candidate free-floating introns** — apply the three-criterion test to every
    consecutive intron pair on a transcript, comparing the polyA and no-select coverage tables from
    steps 2-3:
-   - Low signal in the polyA library at the 3'-most intron of the pair
-   - *Higher* signal in the polyA library at the subsequent (more 5') intron — this is what rules
-     out plain 3' bias, which would predict the opposite direction
-   - Non-low signal at that same 3'-most intron in the no-select library
+   - Low signal in the polyA library at the 3'-most intron of the pair (A)
+   - *Higher* signal in the polyA library at the subsequent (more 5') intron (B), and enough
+     signal at B to be real — this is what rules out plain 3' bias, which would predict the
+     opposite direction. The floor on B matters: when A sits at zero, a bare ratio passes on
+     any speck of coverage, so `--min-polyA-at-b` carries the criterion instead
+   - Non-low signal at A in the no-select library, *and* higher at A than at B
    ```
    python scripts/classify_free_floating_introns.py \
+     --introns unambiguous_introns.bed \
      --polyA-cov polyA_avecov.tsv --noselect-cov noselect_avecov.tsv \
      --ratio-threshold 0.3 --out candidate_introns.tsv
    ```
-   `--ratio-threshold` is the minimum fold-increase required in the polyA library from the 3'-most
-   intron to the next one (0.3 was the value used in the source study; treat it as a tunable
-   knob, not a universal constant — re-derive it from your own negative-control distribution if
-   the sequencing depth or library prep differs substantially).
+   `--ratio-threshold` is the minimum *fractional* increase in polyA coverage from the 3'-most
+   intron to the next one: B must exceed A by at least this fraction of A, so 0.3 means 30%
+   higher — not a 0.3× ratio, which would be a decrease. 0.3 was the value used in the source
+   study; treat it as a tunable knob, not a universal constant — re-derive it from your own
+   negative-control distribution if the sequencing depth or library prep differs substantially.
 
 5. **(Optional) Cross-tissue/condition survey** — summarize retention signal per
    tissue/condition so multiple samples can be compared on one axis:
