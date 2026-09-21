@@ -1,5 +1,7 @@
 # Intron Retention / Free-Floating Intron QC
 
+[![tests](https://github.com/dzungthan01/intron-retention-qc/actions/workflows/tests.yml/badge.svg)](https://github.com/dzungthan01/intron-retention-qc/actions/workflows/tests.yml)
+
 A [Claude Code Skill](https://docs.claude.com/en/docs/claude-code/skills) that identifies
 retained and "free-floating" intron signal in bulk RNA-seq, by comparing polyA-selected
 against total-RNA libraries of the same biological sample and explicitly correcting for
